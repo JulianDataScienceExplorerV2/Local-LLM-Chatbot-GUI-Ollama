@@ -19,9 +19,27 @@ class ChatState(TypedDict):
 class OllamaInterface:
     def __init__(self, root):
         self.root = root
-        self.root.title("Chat Interface GUI with Ollama")
-        self.root.geometry("1000x600")
-        self.root.configure(bg="#2E3440")
+        self.root.title("Ollama Chat Interface")
+        self.root.geometry("1100x700")
+        self.root.minsize(980, 620)
+        self.colors = {
+            "bg": "#1F2633",
+            "surface": "#2A3242",
+            "surface_alt": "#313A4D",
+            "border": "#3B4252",
+            "accent": "#88C0D0",
+            "accent_hover": "#7FBBC5",
+            "text": "#E5E9F0",
+            "muted": "#A7B0C0",
+        }
+        self.fonts = {
+            "title": ("Segoe UI Semibold", 18),
+            "subtitle": ("Segoe UI", 10),
+            "body": ("Segoe UI", 11),
+            "body_bold": ("Segoe UI Semibold", 11),
+            "mono": ("Consolas", 11),
+        }
+        self.root.configure(bg=self.colors["bg"])
 
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
@@ -56,55 +74,144 @@ class OllamaInterface:
             return []
 
     def create_interface(self):
-        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame = ttk.Frame(self.root, padding=16, style="TFrame")
         main_frame.grid(row=0, column=0, sticky="nsew")
-        main_frame.grid_columnconfigure(0, weight=1)
-        main_frame.grid_columnconfigure(1, weight=1)
-        main_frame.grid_rowconfigure(0, weight=1)
+        main_frame.grid_columnconfigure(0, weight=1, uniform="content")
+        main_frame.grid_columnconfigure(1, weight=1, uniform="content")
+        main_frame.grid_rowconfigure(1, weight=1)
 
-        style = ttk.Style()
-        style.configure("TLabel", foreground="#ECEFF4", background="#2E3440", font=("Arial", 12))
-        style.configure("TButton", foreground="#ECEFF4", background="#4C566A", font=("Arial", 12))
-        style.configure("TCombobox", fieldbackground="#3B4252", foreground="#ECEFF4", font=("Arial", 12))
-        style.configure("TFrame", background="#2E3440")
-        style.configure("TText", background="#3B4252", foreground="#ECEFF4", font=("Arial", 14))
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
+        style.configure("TFrame", background=self.colors["bg"])
+        style.configure("Card.TFrame", background=self.colors["surface"])
+        style.configure("TLabel", foreground=self.colors["text"], background=self.colors["bg"], font=self.fonts["body"])
+        style.configure("Header.TLabel", foreground=self.colors["text"], background=self.colors["bg"], font=self.fonts["title"])
+        style.configure("Subtle.TLabel", foreground=self.colors["muted"], background=self.colors["bg"], font=self.fonts["subtitle"])
+        style.configure("CardTitle.TLabel", foreground=self.colors["text"], background=self.colors["surface"], font=self.fonts["body_bold"])
+        style.configure("Field.TLabel", foreground=self.colors["muted"], background=self.colors["surface"], font=self.fonts["subtitle"])
+        style.configure(
+            "Primary.TButton",
+            foreground=self.colors["bg"],
+            background=self.colors["accent"],
+            padding=(12, 6),
+            font=self.fonts["body_bold"],
+        )
+        style.map(
+            "Primary.TButton",
+            background=[("active", self.colors["accent_hover"]), ("disabled", "#5F6777")],
+            foreground=[("disabled", "#C0C6D4")],
+        )
+        style.configure(
+            "Secondary.TButton",
+            foreground=self.colors["text"],
+            background=self.colors["surface_alt"],
+            padding=(10, 5),
+            font=self.fonts["body"],
+        )
+        style.map(
+            "Secondary.TButton",
+            background=[("active", "#3C455A"), ("disabled", "#3A4150")],
+            foreground=[("disabled", "#8B93A4")],
+        )
+        style.configure(
+            "TCombobox",
+            fieldbackground=self.colors["surface_alt"],
+            background=self.colors["surface_alt"],
+            foreground=self.colors["text"],
+            arrowcolor=self.colors["accent"],
+            padding=6,
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", self.colors["surface_alt"])],
+            foreground=[("readonly", self.colors["text"])],
+        )
+        style.configure("TSeparator", background=self.colors["border"])
 
-        prompt_frame = ttk.Frame(main_frame)
-        prompt_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        header_frame = ttk.Frame(main_frame, style="TFrame")
+        header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        header_frame.grid_columnconfigure(0, weight=1)
+        ttk.Label(header_frame, text="Ollama Chat", style="Header.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            header_frame,
+            text="Fast, local responses with a clean workspace.",
+            style="Subtle.TLabel",
+        ).grid(row=1, column=0, sticky="w")
+        ttk.Separator(header_frame, orient="horizontal").grid(row=2, column=0, sticky="ew", pady=(10, 0))
+
+        prompt_frame = ttk.Frame(main_frame, style="Card.TFrame", padding=14)
+        prompt_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
         prompt_frame.grid_columnconfigure(0, weight=1)
-        prompt_frame.grid_columnconfigure(1, weight=1)
-        prompt_frame.grid_rowconfigure(1, weight=1)
+        prompt_frame.grid_rowconfigure(3, weight=1)
 
-        ttk.Label(prompt_frame, text="Select a model:").grid(row=0, column=0, sticky=tk.W, pady=5, padx=5)
-        self.model_combobox = ttk.Combobox(prompt_frame, values=self.models, width=40)
-        self.model_combobox.grid(row=0, column=1, pady=5, padx=5, sticky="ew")
+        ttk.Label(prompt_frame, text="MODEL", style="Field.TLabel").grid(row=0, column=0, sticky=tk.W, pady=(0, 4))
+        self.model_combobox = ttk.Combobox(prompt_frame, values=self.models, width=40, state="readonly")
+        self.model_combobox.grid(row=1, column=0, pady=(0, 12), sticky="ew")
         self.model_combobox.current(0)
 
-        ttk.Label(prompt_frame, text="Enter your prompt:").grid(row=1, column=0, sticky=tk.W, pady=5, padx=5)
-        self.prompt_entry = tk.Text(prompt_frame, height=10, width=50, bg="#3B4252", fg="#ECEFF4", insertbackground="#ECEFF4", font=("Arial", 14))
-        self.prompt_entry.grid(row=1, column=1, pady=5, padx=5, sticky="nsew")
+        ttk.Label(prompt_frame, text="PROMPT", style="Field.TLabel").grid(row=2, column=0, sticky=tk.W, pady=(0, 4))
+        self.prompt_entry = tk.Text(
+            prompt_frame,
+            height=10,
+            width=50,
+            bg=self.colors["surface_alt"],
+            fg=self.colors["text"],
+            insertbackground=self.colors["accent"],
+            font=self.fonts["body"],
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=self.colors["border"],
+            highlightcolor=self.colors["accent"],
+        )
+        self.prompt_entry.grid(row=3, column=0, pady=(0, 8), sticky="nsew")
         self.prompt_entry.bind("<Control-Return>", self.start_response_generation)
 
-        self.generate_button = ttk.Button(prompt_frame, text="Generate Response", command=self.start_response_generation)
-        self.generate_button.grid(row=2, column=1, pady=10, padx=5, sticky="e")
+        ttk.Label(prompt_frame, text="Tip: Ctrl+Enter to send", style="Subtle.TLabel").grid(
+            row=4, column=0, sticky="w", pady=(0, 10)
+        )
 
-        response_frame = ttk.Frame(main_frame)
-        response_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        self.generate_button = ttk.Button(
+            prompt_frame, text="Generate Response", command=self.start_response_generation, style="Primary.TButton"
+        )
+        self.generate_button.grid(row=5, column=0, pady=(0, 6), sticky="e")
+
+        self.status_label = ttk.Label(prompt_frame, text="Ready", style="Subtle.TLabel")
+        self.status_label.grid(row=6, column=0, sticky="w", pady=(4, 0))
+
+        response_frame = ttk.Frame(main_frame, style="Card.TFrame", padding=14)
+        response_frame.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
         response_frame.grid_columnconfigure(0, weight=1)
         response_frame.grid_rowconfigure(1, weight=1)
 
-        ttk.Label(response_frame, text="Model Response:").grid(row=0, column=0, sticky=tk.W, pady=5, padx=5)
-        self.response_area = scrolledtext.ScrolledText(response_frame, wrap=tk.WORD, width=70, height=20, state=tk.DISABLED, bg="#3B4252", fg="#ECEFF4", insertbackground="#ECEFF4", font=("Arial", 14))
-        self.response_area.grid(row=1, column=0, pady=5, padx=5, sticky="nsew")
+        response_header = ttk.Frame(response_frame, style="Card.TFrame")
+        response_header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        response_header.grid_columnconfigure(0, weight=1)
+        ttk.Label(response_header, text="Model Response", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
+
+        self.export_button = ttk.Button(
+            response_header, text="Export Response", command=self.export_response, state=tk.DISABLED, style="Secondary.TButton"
+        )
+        self.export_button.grid(row=0, column=1, sticky="e")
+
+        self.response_area = scrolledtext.ScrolledText(
+            response_frame,
+            wrap=tk.WORD,
+            width=70,
+            height=20,
+            state=tk.DISABLED,
+            bg=self.colors["surface_alt"],
+            fg=self.colors["text"],
+            insertbackground=self.colors["accent"],
+            font=self.fonts["body"],
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=self.colors["border"],
+            highlightcolor=self.colors["accent"],
+        )
+        self.response_area.grid(row=1, column=0, sticky="nsew")
         self.response_area.config(state=tk.NORMAL)
         self.response_area.insert(tk.END, "Please select a model and enter a prompt to begin.")
         self.response_area.config(state=tk.DISABLED)
-
-        self.export_button = ttk.Button(response_frame, text="Export Response", command=self.export_response, state=tk.DISABLED)
-        self.export_button.grid(row=2, column=0, pady=10, padx=5, sticky="e")
-
-        self.status_label = ttk.Label(prompt_frame, text="", font=("Arial", 12))
-        self.status_label.grid(row=4, column=1, pady=5, padx=5, sticky="w")
 
     def create_conversation_graph(self):
         # Create the LangGraph graph
