@@ -19,7 +19,8 @@
 
 > Chat view with multi-session sidebar / Vista de chat con sidebar de sesiones múltiples
 
-<img width="1252" height="815" alt="image" src="https://github.com/user-attachments/assets/2876f7b3-4ad3-4321-a84b-cc053724bfda" />
+<img width="1258" height="807" alt="image" src="https://github.com/user-attachments/assets/83f710dd-3957-4853-89e4-a58e26c75a37" />
+
 
 
 ---
