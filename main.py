@@ -1,5 +1,5 @@
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+import customtkinter as ctk
+from tkinter import messagebox, filedialog
 import threading
 import queue
 import time
@@ -11,117 +11,83 @@ from langgraph.checkpoint.memory import MemorySaver
 from typing import Annotated, TypedDict
 import requests
 
-# ──────────────────────────────────────────────
-#  State definition
-# ──────────────────────────────────────────────
+# ── CustomTkinter global config ─────────────────────
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+# ── State definition ─────────────────────────────────
 class ChatState(TypedDict):
     messages: Annotated[list, lambda x, y: x + y]
 
 
-# ──────────────────────────────────────────────
-#  Palette & fonts
-# ──────────────────────────────────────────────
-COLORS = {
-    "bg":           "#0D1117",   # main background
-    "sidebar":      "#161B22",   # sidebar
-    "surface":      "#1C2128",   # chat area bg
-    "bubble_user":  "#1F6FEB",   # user bubble
-    "bubble_ai":    "#21262D",   # AI bubble
-    "input_bg":     "#21262D",   # input box bg
-    "border":       "#30363D",   # borders
-    "accent":       "#388BFD",   # primary accent (blue)
-    "accent_glow":  "#1F6FEB",   # button hover
-    "text":         "#E6EDF3",   # main text
-    "text_dim":     "#8B949E",   # muted/secondary text
-    "text_code":    "#79C0FF",   # code colour
-    "dot1":         "#388BFD",
-    "dot2":         "#58A6FF",
-    "dot3":         "#79C0FF",
-    "success":      "#3FB950",
-    "warning":      "#D29922",
-    "danger":       "#F85149",
-    "header":       "#0D1117",
+# ── Palette (Synthwave / Neon) ───────────────────────
+C = {
+    # Backgrounds
+    "bg":           "#07080F",   # casi negro azulado
+    "sidebar":      "#0C0D1A",   # sidebar oscuro
+    "surface":      "#0F1020",   # área de chat
+    "card":         "#171829",   # cards/burbujas AI
+    "input_bg":     "#12132B",   # fondo del input
+
+    # Bubbles
+    "bubble_user":  "#3D2FBF",   # violeta profundo
+    "bubble_user2": "#5B4AE8",   # borde/gradiente usuario
+
+    # Accent colors
+    "purple":       "#8B5CF6",   # violeta vibrante
+    "cyan":         "#06B6D4",   # cyan eléctrico
+    "pink":         "#EC4899",   # rosa neón
+    "green":        "#10B981",   # verde menta
+    "yellow":       "#F59E0B",   # ámbar
+
+    # Text
+    "text":         "#EEF0FF",   # blanco azulado
+    "text_dim":     "#7B82B0",   # gris violeta
+    "text_code":    "#67E8F9",   # cyan para código
+
+    # Borders
+    "border":       "#1E2048",
+    "border_glow":  "#4C3DD4",
+
+    # Buttons
+    "btn_primary":  "#5C4AE4",
+    "btn_hover":    "#7B6AF0",
+    "btn_delete":   "#991B1B",
+    "btn_delete_h": "#DC2626",
 }
 
 FONTS = {
-    "title":    ("Segoe UI Semibold", 14),
-    "subtitle": ("Segoe UI", 9),
-    "body":     ("Segoe UI", 11),
-    "body_bold":("Segoe UI Semibold", 11),
-    "small":    ("Segoe UI", 9),
-    "mono":     ("Consolas", 10),
-    "icon":     ("Segoe UI Emoji", 14),
+    "title":     ("Segoe UI Semibold", 15),
+    "subtitle":  ("Segoe UI", 10),
+    "body":      ("Segoe UI", 12),
+    "body_bold": ("Segoe UI Semibold", 12),
+    "small":     ("Segoe UI", 10),
+    "mono":      ("Cascadia Code", 10),
+    "nano":      ("Segoe UI", 9),
 }
 
-# ──────────────────────────────────────────────
-#  Helper: rounded rectangle on canvas
-# ──────────────────────────────────────────────
-def rounded_rect(canvas, x1, y1, x2, y2, r=12, **kw):
-    pts = [
-        x1+r, y1,  x2-r, y1,
-        x2, y1,    x2, y1+r,
-        x2, y2-r,  x2, y2,
-        x2-r, y2,  x1+r, y2,
-        x1, y2,    x1, y2-r,
-        x1, y1+r,  x1, y1,
-    ]
-    return canvas.create_polygon(pts, smooth=True, **kw)
 
-
-# ──────────────────────────────────────────────
-#  Custom scrollable frame
-# ──────────────────────────────────────────────
-class ScrollableFrame(tk.Frame):
-    def __init__(self, parent, bg, **kw):
-        super().__init__(parent, bg=bg, **kw)
-        self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0)
-        self.scrollbar = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview,
-                                      bg=COLORS["sidebar"], troughcolor=COLORS["bg"],
-                                      activebackground=COLORS["accent"])
-        self.inner = tk.Frame(self.canvas, bg=bg)
-
-        self.inner_id = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
-
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
-
-        self.inner.bind("<Configure>", self._on_inner_configure)
-        self.canvas.bind("<Configure>", self._on_canvas_configure)
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-
-    def _on_inner_configure(self, _):
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-
-    def _on_canvas_configure(self, event):
-        self.canvas.itemconfig(self.inner_id, width=event.width)
-
-    def _on_mousewheel(self, event):
-        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    def scroll_bottom(self):
-        self.canvas.update_idletasks()
-        self.canvas.yview_moveto(1.0)
-
-
-# ──────────────────────────────────────────────
-#  Typing indicator (animated dots)
-# ──────────────────────────────────────────────
-class TypingIndicator(tk.Frame):
+# ── Typing indicator ─────────────────────────────────
+class TypingIndicator(ctk.CTkFrame):
     def __init__(self, parent, **kw):
-        super().__init__(parent, bg=COLORS["bubble_ai"], **kw)
-        self._dots = []
+        super().__init__(parent, fg_color=C["card"],
+                         corner_radius=14, **kw)
         self._job = None
         self._step = 0
+        self._dots = []
 
-        prefix = tk.Label(self, text="✦ Ollama  ", bg=COLORS["bubble_ai"],
-                          fg=COLORS["accent"], font=FONTS["small"])
-        prefix.pack(side="left")
+        ctk.CTkLabel(self, text="✦  Ollama", text_color=C["purple"],
+                     font=FONTS["small"], fg_color="transparent").pack(
+            side="left", padx=(12, 6), pady=10)
 
+        dot_frame = ctk.CTkFrame(self, fg_color="transparent")
+        dot_frame.pack(side="left", pady=10, padx=(0, 12))
         for _ in range(3):
-            d = tk.Label(self, text="●", bg=COLORS["bubble_ai"],
-                         fg=COLORS["text_dim"], font=("Segoe UI", 9))
-            d.pack(side="left", padx=1)
+            d = ctk.CTkLabel(dot_frame, text="●", width=10,
+                             text_color=C["text_dim"],
+                             font=("Segoe UI", 10),
+                             fg_color="transparent")
+            d.pack(side="left", padx=2)
             self._dots.append(d)
 
     def start(self):
@@ -133,220 +99,192 @@ class TypingIndicator(tk.Frame):
             self._job = None
 
     def _animate(self):
-        colors = [COLORS["dot1"], COLORS["dot2"], COLORS["dot3"]]
+        colors = [C["purple"], C["cyan"], C["pink"]]
         for i, dot in enumerate(self._dots):
-            dot.config(fg=colors[i] if i == self._step % 3 else COLORS["text_dim"])
+            dot.configure(text_color=colors[i] if i == self._step % 3 else C["text_dim"])
         self._step += 1
-        self._job = self.after(450, self._animate)
+        self._job = self.after(400, self._animate)
 
 
-# ──────────────────────────────────────────────
-#  Chat bubble widget
-# ──────────────────────────────────────────────
-class ChatBubble(tk.Frame):
-    def __init__(self, parent, role, text, timestamp, **kw):
-        super().__init__(parent, bg=COLORS["surface"], **kw)
+# ── Chat bubble ──────────────────────────────────────
+class ChatBubble(ctk.CTkFrame):
+    def __init__(self, parent, role: str, text: str, timestamp: str, **kw):
+        super().__init__(parent, fg_color="transparent", **kw)
         is_user = role == "user"
 
-        self.columnconfigure(0, weight=1)
-
-        # Avatar + meta row
-        meta_frame = tk.Frame(self, bg=COLORS["surface"])
+        # Meta row
+        meta = ctk.CTkFrame(self, fg_color="transparent")
         if is_user:
-            meta_frame.pack(anchor="e", padx=(60, 14), pady=(10, 2))
-            avatar_text = "You"
-            avatar_color = COLORS["accent"]
+            meta.pack(anchor="e", padx=(80, 14), pady=(10, 3))
+            ctk.CTkLabel(meta, text=f"{timestamp}  ", text_color=C["text_dim"],
+                         font=FONTS["nano"], fg_color="transparent").pack(side="left")
+            ctk.CTkLabel(meta, text="Tú", text_color=C["purple"],
+                         font=FONTS["small"], fg_color="transparent").pack(side="left")
         else:
-            meta_frame.pack(anchor="w", padx=(14, 60), pady=(10, 2))
-            avatar_text = "✦ Ollama"
-            avatar_color = COLORS["text_dim"]
+            meta.pack(anchor="w", padx=(14, 80), pady=(10, 3))
+            ctk.CTkLabel(meta, text="✦ Ollama", text_color=C["cyan"],
+                         font=FONTS["small"], fg_color="transparent").pack(side="left")
+            ctk.CTkLabel(meta, text=f"  {timestamp}", text_color=C["text_dim"],
+                         font=FONTS["nano"], fg_color="transparent").pack(side="left")
 
-        tk.Label(meta_frame, text=avatar_text, bg=COLORS["surface"],
-                 fg=avatar_color, font=FONTS["small"]).pack(side="left")
-        tk.Label(meta_frame, text=f"  {timestamp}", bg=COLORS["surface"],
-                 fg=COLORS["text_dim"], font=FONTS["small"]).pack(side="left")
+        # Bubble container
+        bubble_color = C["bubble_user"] if is_user else C["card"]
+        border_color = C["bubble_user2"] if is_user else C["border"]
 
-        # Bubble
-        bubble_bg = COLORS["bubble_user"] if is_user else COLORS["bubble_ai"]
-        bubble_fg = COLORS["text"]
-
-        bubble = tk.Frame(self, bg=bubble_bg,
-                          highlightthickness=1,
-                          highlightbackground=COLORS["border"] if not is_user else bubble_bg)
+        bubble = ctk.CTkFrame(self, fg_color=bubble_color,
+                               corner_radius=16,
+                               border_width=1,
+                               border_color=border_color)
         if is_user:
-            bubble.pack(anchor="e", padx=(60, 14), pady=(0, 6))
+            bubble.pack(anchor="e", padx=(80, 14), pady=(0, 8))
         else:
-            bubble.pack(anchor="w", padx=(14, 60), pady=(0, 6))
+            bubble.pack(anchor="w", padx=(14, 80), pady=(0, 8))
 
-        # Render text with basic markdown-like formatting
-        self._render_text(bubble, text, bubble_bg, bubble_fg, is_user)
+        self._render(bubble, text)
 
-    def _render_text(self, parent, text, bg, fg, is_user):
-        """Render text with basic markdown: **bold**, `code`, ```blocks```."""
-        # Split into code blocks vs normal lines
+    def _render(self, parent, text):
+        """Render with basic markdown: ```blocks```, **bold**, `code`."""
         parts = re.split(r'(```[\s\S]*?```)', text)
-
         for part in parts:
             if part.startswith("```") and part.endswith("```"):
-                # Code block
-                code = part[3:-3].strip()
-                # Remove language hint if present
-                if "\n" in code:
-                    first_line, rest = code.split("\n", 1)
-                    if re.match(r'^[a-zA-Z]+$', first_line.strip()):
-                        code = rest
-                code_frame = tk.Frame(parent, bg="#0D1117",
-                                      highlightthickness=1,
-                                      highlightbackground=COLORS["border"])
-                code_frame.pack(fill="x", padx=10, pady=6)
-                tk.Label(code_frame, text=code, bg="#0D1117", fg=COLORS["text_code"],
-                         font=FONTS["mono"], justify="left", anchor="w",
-                         wraplength=520).pack(padx=10, pady=8, anchor="w")
-            else:
-                # Normal text with inline formatting
-                if part.strip():
-                    lines = part.strip().split("\n")
-                    for line in lines:
-                        if not line.strip():
-                            tk.Frame(parent, bg=bg, height=4).pack()
-                            continue
-                        self._render_inline(parent, line.strip(), bg, fg)
+                raw = part[3:-3].strip()
+                # Strip language hint
+                if "\n" in raw:
+                    first, rest = raw.split("\n", 1)
+                    if re.match(r'^[a-zA-Z0-9+#-]+$', first.strip()):
+                        raw = rest
 
-    def _render_inline(self, parent, line, bg, fg):
-        """Render a line with inline bold/code formatting."""
-        # Simple approach: just find **...** and `...`
-        frame = tk.Frame(parent, bg=bg)
-        frame.pack(fill="x", padx=12, pady=1, anchor="w")
+                code_frame = ctk.CTkFrame(parent, fg_color="#050710",
+                                           corner_radius=8,
+                                           border_width=1,
+                                           border_color=C["cyan"])
+                code_frame.pack(fill="x", padx=12, pady=6)
+                ctk.CTkLabel(code_frame, text=raw,
+                             text_color=C["text_code"],
+                             font=FONTS["mono"],
+                             justify="left", anchor="w",
+                             wraplength=520,
+                             fg_color="transparent").pack(
+                    padx=12, pady=8, anchor="w")
+            else:
+                stripped = part.strip()
+                if stripped:
+                    for line in stripped.split("\n"):
+                        if not line.strip():
+                            ctk.CTkFrame(parent, fg_color="transparent",
+                                         height=4).pack()
+                            continue
+                        self._render_line(parent, line.strip())
+
+    def _render_line(self, parent, line):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", padx=12, pady=1, anchor="w")
 
         pattern = re.compile(r'(\*\*(.+?)\*\*|`([^`]+)`)')
         pos = 0
         col = 0
         for m in pattern.finditer(line):
-            # Text before match
             before = line[pos:m.start()]
             if before:
-                tk.Label(frame, text=before, bg=bg, fg=fg,
-                         font=FONTS["body"], wraplength=520,
-                         justify="left").grid(row=0, column=col, sticky="w")
+                ctk.CTkLabel(row, text=before, text_color=C["text"],
+                             font=FONTS["body"], fg_color="transparent",
+                             wraplength=520, justify="left").grid(
+                    row=0, column=col, sticky="w")
                 col += 1
             if m.group(1).startswith("**"):
-                tk.Label(frame, text=m.group(2), bg=bg, fg=fg,
-                         font=FONTS["body_bold"], wraplength=520,
-                         justify="left").grid(row=0, column=col, sticky="w")
+                ctk.CTkLabel(row, text=m.group(2), text_color=C["text"],
+                             font=FONTS["body_bold"], fg_color="transparent",
+                             wraplength=520, justify="left").grid(
+                    row=0, column=col, sticky="w")
             else:
-                tk.Label(frame, text=m.group(3), bg="#0D1117", fg=COLORS["text_code"],
-                         font=FONTS["mono"], wraplength=520,
-                         justify="left").grid(row=0, column=col, sticky="w")
+                ctk.CTkLabel(row, text=m.group(3), text_color=C["text_code"],
+                             font=FONTS["mono"], fg_color="#050710",
+                             corner_radius=4,
+                             wraplength=520, justify="left").grid(
+                    row=0, column=col, sticky="w", padx=2)
             col += 1
             pos = m.end()
-
-        # Remaining text
         tail = line[pos:]
         if tail:
-            tk.Label(frame, text=tail, bg=bg, fg=fg,
-                     font=FONTS["body"], wraplength=520,
-                     justify="left").grid(row=0, column=col, sticky="w")
+            ctk.CTkLabel(row, text=tail, text_color=C["text"],
+                         font=FONTS["body"], fg_color="transparent",
+                         wraplength=520, justify="left").grid(
+                row=0, column=col, sticky="w")
 
 
-# ──────────────────────────────────────────────
-#  Icon button (flat, no border)
-# ──────────────────────────────────────────────
-class IconButton(tk.Label):
-    def __init__(self, parent, text, command, tooltip_text="", **kw):
-        defaults = dict(bg=COLORS["sidebar"], fg=COLORS["text_dim"],
-                        font=FONTS["icon"], cursor="hand2", padx=6, pady=4)
-        defaults.update(kw)
-        super().__init__(parent, text=text, **defaults)
-        self._cmd = command
-        self._normal_bg = defaults["bg"]
-        self._tooltip_text = tooltip_text
-
-        self.bind("<Button-1>", lambda _: command())
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-
-    def _on_enter(self, _):
-        self.config(fg=COLORS["text"], bg=COLORS["surface"])
-
-    def _on_leave(self, _):
-        self.config(fg=COLORS["text_dim"], bg=self._normal_bg)
-
-
-# ──────────────────────────────────────────────
-#  Session item in sidebar
-# ──────────────────────────────────────────────
-class SessionItem(tk.Frame):
+# ── Session item in sidebar ──────────────────────────
+class SessionItem(ctk.CTkFrame):
     def __init__(self, parent, title, on_click, on_delete, **kw):
-        super().__init__(parent, bg=COLORS["sidebar"], cursor="hand2", **kw)
-        self._on_click = on_click
-        self._normal_bg = COLORS["sidebar"]
+        super().__init__(parent, fg_color="transparent",
+                         corner_radius=10, cursor="hand2", **kw)
         self._active = False
+        self._on_click = on_click
 
-        self.lbl = tk.Label(self, text=title, bg=COLORS["sidebar"],
-                            fg=COLORS["text"], font=FONTS["small"],
-                            anchor="w", wraplength=160, justify="left")
-        self.lbl.pack(side="left", fill="x", expand=True, padx=(8, 0), pady=6)
+        self.lbl = ctk.CTkLabel(self, text=title, text_color=C["text_dim"],
+                                 font=FONTS["small"], anchor="w",
+                                 wraplength=150, justify="left",
+                                 fg_color="transparent")
+        self.lbl.pack(side="left", fill="x", expand=True, padx=(10, 0), pady=8)
 
-        self.del_btn = tk.Label(self, text="✕", bg=COLORS["sidebar"],
-                                fg=COLORS["text_dim"], font=FONTS["small"],
-                                cursor="hand2")
+        self.del_btn = ctk.CTkButton(self, text="✕", width=22, height=22,
+                                      fg_color="transparent",
+                                      hover_color=C["btn_delete"],
+                                      text_color=C["text_dim"],
+                                      font=FONTS["nano"],
+                                      corner_radius=6,
+                                      command=on_delete)
         self.del_btn.pack(side="right", padx=(0, 6))
-        self.del_btn.bind("<Button-1>", lambda _: on_delete())
 
-        for w in (self, self.lbl):
-            w.bind("<Button-1>", lambda _: on_click())
-            w.bind("<Enter>", self._hover_on)
-            w.bind("<Leave>", self._hover_off)
+        self.bind("<Button-1>", lambda _: on_click())
+        self.lbl.bind("<Button-1>", lambda _: on_click())
+        self.bind("<Enter>", self._hover_on)
+        self.bind("<Leave>", self._hover_off)
+        self.lbl.bind("<Enter>", self._hover_on)
+        self.lbl.bind("<Leave>", self._hover_off)
 
-    def set_active(self, active):
+    def set_active(self, active: bool):
         self._active = active
-        color = COLORS["surface"] if active else COLORS["sidebar"]
-        self._normal_bg = color
-        self.config(bg=color)
-        self.lbl.config(bg=color)
-        self.del_btn.config(bg=color)
+        color = C["border"] if active else "transparent"
+        self.configure(fg_color=color)
+        self.lbl.configure(text_color=C["text"] if active else C["text_dim"],
+                           font=FONTS["body_bold"] if active else FONTS["small"])
 
     def _hover_on(self, _):
         if not self._active:
-            for w in (self, self.lbl, self.del_btn):
-                w.config(bg="#1C2128")
+            self.configure(fg_color=C["border"])
 
     def _hover_off(self, _):
-        bg = COLORS["surface"] if self._active else COLORS["sidebar"]
-        for w in (self, self.lbl, self.del_btn):
-            w.config(bg=bg)
+        if not self._active:
+            self.configure(fg_color="transparent")
 
 
-# ──────────────────────────────────────────────
-#  Main Application
-# ──────────────────────────────────────────────
+# ── Main Application ─────────────────────────────────
 class OllamaInterface:
-    def __init__(self, root):
+    def __init__(self, root: ctk.CTk):
         self.root = root
         self.root.title("Ollama Chat")
-        self.root.geometry("1200x740")
-        self.root.minsize(900, 580)
-        self.root.configure(bg=COLORS["bg"])
-        self.root.grid_columnconfigure(0, weight=1)
-        self.root.grid_rowconfigure(0, weight=1)
+        self.root.geometry("1260x780")
+        self.root.minsize(960, 600)
+        self.root.configure(fg_color=C["bg"])
 
         self.window_open = True
-        self.response_queue = queue.Queue()
+        self.response_queue: queue.Queue = queue.Queue()
         self.llm = None
         self.checkpointer = MemorySaver()
         self.conversation_graph = self._build_graph()
         self.typing_indicator = None
         self._initialized = False
 
-        # Sessions: list of dicts {id, title, thread_id, history: [(role, text, ts)]}
-        self.sessions = []
-        self.active_session_idx = None
-        self._session_counter = 0
+        self.sessions: list[dict] = []
+        self.active_idx: int | None = None
+        self._session_cnt = 0
 
-        # UI
         self.models = self._fetch_models()
         if not self.models:
-            messagebox.showerror("Error", "No se pudieron cargar modelos. Verifica que Ollama esté corriendo.")
+            messagebox.showerror(
+                "Sin conexión",
+                "No se encontraron modelos.\nAsegúrate de que Ollama esté corriendo:\n\n  ollama serve"
+            )
             self.root.after(0, self.root.destroy)
             return
 
@@ -355,7 +293,7 @@ class OllamaInterface:
         self._poll_queue()
         self._initialized = True
 
-    # ── LangGraph ──────────────────────────────
+    # ── LangGraph ─────────────────────────────────
     def _build_graph(self):
         builder = StateGraph(ChatState)
         builder.add_node("chatbot", self._invoke_model)
@@ -367,7 +305,7 @@ class OllamaInterface:
         response = self.llm.invoke(state["messages"])
         return {"messages": [AIMessage(content=response)]}
 
-    # ── Fetch models ────────────────────────────
+    # ── Fetch models ───────────────────────────────
     def _fetch_models(self):
         try:
             r = requests.get("http://localhost:11434/api/tags", timeout=5)
@@ -377,291 +315,349 @@ class OllamaInterface:
             pass
         return []
 
-    # ── Build UI ────────────────────────────────
+    # ── Build UI ───────────────────────────────────
     def _build_ui(self):
-        # ── Root paned layout: sidebar | main
-        self.paned = tk.PanedWindow(self.root, orient="horizontal",
-                                    bg=COLORS["border"], sashwidth=1,
-                                    sashrelief="flat", handlesize=0)
-        self.paned.grid(row=0, column=0, sticky="nsew")
+        # Root 2-column grid
+        self.root.grid_columnconfigure(0, weight=0)
+        self.root.grid_columnconfigure(1, weight=1)
+        self.root.grid_rowconfigure(0, weight=1)
 
         # ── Sidebar ──────────────────────────────
-        sidebar = tk.Frame(self.paned, bg=COLORS["sidebar"], width=220)
-        sidebar.pack_propagate(False)
-        self.paned.add(sidebar, minsize=180)
+        sidebar = ctk.CTkFrame(self.root, width=230,
+                                fg_color=C["sidebar"],
+                                corner_radius=0)
+        sidebar.grid(row=0, column=0, sticky="nsew")
+        sidebar.grid_propagate(False)
+        sidebar.grid_rowconfigure(2, weight=1)
+        sidebar.grid_columnconfigure(0, weight=1)
 
-        # Sidebar header
-        sb_header = tk.Frame(sidebar, bg=COLORS["sidebar"])
-        sb_header.pack(fill="x", padx=12, pady=(14, 8))
+        # Logo / title
+        logo_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        logo_frame.grid(row=0, column=0, sticky="ew", padx=14, pady=(18, 8))
+        logo_frame.grid_columnconfigure(0, weight=1)
 
-        tk.Label(sb_header, text="💬  Ollama Chat", bg=COLORS["sidebar"],
-                 fg=COLORS["text"], font=FONTS["body_bold"]).pack(side="left")
+        ctk.CTkLabel(logo_frame, text="✦  Ollama Chat",
+                     text_color=C["purple"], font=FONTS["title"],
+                     fg_color="transparent").grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(logo_frame, text="Local · Privado · Rápido",
+                     text_color=C["text_dim"], font=FONTS["nano"],
+                     fg_color="transparent").grid(row=1, column=0, sticky="w", pady=(2, 0))
 
-        new_btn = tk.Label(sb_header, text="＋", bg=COLORS["sidebar"],
-                           fg=COLORS["accent"], font=("Segoe UI", 16),
-                           cursor="hand2")
-        new_btn.pack(side="right")
-        new_btn.bind("<Button-1>", lambda _: self._new_session())
+        # New chat button
+        new_btn = ctk.CTkButton(sidebar, text="＋  Nuevo Chat",
+                                 fg_color=C["btn_primary"],
+                                 hover_color=C["btn_hover"],
+                                 text_color=C["text"],
+                                 font=FONTS["body_bold"],
+                                 corner_radius=10, height=38,
+                                 command=self._new_session)
+        new_btn.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 8))
 
-        ttk.Separator(sidebar, orient="horizontal").pack(fill="x", padx=8)
+        # Separator line
+        ctk.CTkFrame(sidebar, height=1, fg_color=C["border"],
+                     corner_radius=0).grid(row=2, column=0, sticky="ew",
+                                           padx=8, pady=(0, 6))
 
         # Session list
-        self.session_list_frame = tk.Frame(sidebar, bg=COLORS["sidebar"])
-        self.session_list_frame.pack(fill="both", expand=True, pady=4)
+        self.session_scroll = ctk.CTkScrollableFrame(
+            sidebar, fg_color="transparent",
+            scrollbar_button_color=C["border"],
+            scrollbar_button_hover_color=C["purple"])
+        self.session_scroll.grid(row=3, column=0, sticky="nsew",
+                                  padx=6, pady=(0, 6))
+        self.session_scroll.grid_columnconfigure(0, weight=1)
+        sidebar.grid_rowconfigure(3, weight=1)
 
-        # Sidebar footer: model selector
-        ttk.Separator(sidebar, orient="horizontal").pack(fill="x", padx=8)
-        sb_footer = tk.Frame(sidebar, bg=COLORS["sidebar"])
-        sb_footer.pack(fill="x", padx=10, pady=10)
+        # Model selector footer
+        ctk.CTkFrame(sidebar, height=1, fg_color=C["border"],
+                     corner_radius=0).grid(row=4, column=0, sticky="ew", padx=8)
 
-        tk.Label(sb_footer, text="MODEL", bg=COLORS["sidebar"],
-                 fg=COLORS["text_dim"], font=FONTS["small"]).pack(anchor="w")
+        footer = ctk.CTkFrame(sidebar, fg_color="transparent")
+        footer.grid(row=5, column=0, sticky="ew", padx=12, pady=10)
+        footer.grid_columnconfigure(0, weight=1)
 
-        style = ttk.Style(self.root)
-        style.theme_use("clam")
-        style.configure("Dark.TCombobox",
-                        fieldbackground=COLORS["input_bg"],
-                        background=COLORS["input_bg"],
-                        foreground=COLORS["text"],
-                        arrowcolor=COLORS["accent"],
-                        selectbackground=COLORS["input_bg"],
-                        selectforeground=COLORS["text"])
-        style.map("Dark.TCombobox",
-                  fieldbackground=[("readonly", COLORS["input_bg"])],
-                  foreground=[("readonly", COLORS["text"])])
+        ctk.CTkLabel(footer, text="🤖  MODELO", text_color=C["text_dim"],
+                     font=FONTS["nano"], fg_color="transparent").grid(
+            row=0, column=0, sticky="w", pady=(0, 4))
 
-        self.model_var = tk.StringVar(value=self.models[0])
-        self.model_combo = ttk.Combobox(sb_footer, textvariable=self.model_var,
-                                        values=self.models, state="readonly",
-                                        style="Dark.TCombobox")
-        self.model_combo.pack(fill="x", pady=(4, 0))
+        self.model_var = ctk.StringVar(value=self.models[0])
+        self.model_combo = ctk.CTkComboBox(footer,
+                                            values=self.models,
+                                            variable=self.model_var,
+                                            fg_color=C["input_bg"],
+                                            border_color=C["border"],
+                                            button_color=C["purple"],
+                                            button_hover_color=C["btn_hover"],
+                                            dropdown_fg_color=C["card"],
+                                            dropdown_hover_color=C["border"],
+                                            text_color=C["text"],
+                                            font=FONTS["small"],
+                                            state="readonly")
+        self.model_combo.grid(row=1, column=0, sticky="ew")
 
-        # ── Main panel ───────────────────────────
-        main_panel = tk.Frame(self.paned, bg=COLORS["surface"])
-        self.paned.add(main_panel, minsize=560)
-
-        main_panel.grid_rowconfigure(0, weight=0)  # topbar
-        main_panel.grid_rowconfigure(1, weight=1)  # chat scroll
-        main_panel.grid_rowconfigure(2, weight=0)  # input row
-        main_panel.grid_columnconfigure(0, weight=1)
+        # ── Main panel ────────────────────────────
+        main = ctk.CTkFrame(self.root, fg_color=C["surface"], corner_radius=0)
+        main.grid(row=0, column=1, sticky="nsew")
+        main.grid_rowconfigure(1, weight=1)
+        main.grid_columnconfigure(0, weight=1)
 
         # Top bar
-        self.topbar = tk.Frame(main_panel, bg=COLORS["bg"], height=48)
-        self.topbar.grid(row=0, column=0, sticky="ew")
-        self.topbar.grid_propagate(False)
-        self.topbar.grid_columnconfigure(0, weight=1)
+        topbar = ctk.CTkFrame(main, fg_color=C["sidebar"],
+                               corner_radius=0, height=52)
+        topbar.grid(row=0, column=0, sticky="ew")
+        topbar.grid_propagate(False)
+        topbar.grid_columnconfigure(0, weight=1)
 
-        self.session_title_var = tk.StringVar(value="New Chat")
-        self.session_title_lbl = tk.Label(self.topbar, textvariable=self.session_title_var,
-                                          bg=COLORS["bg"], fg=COLORS["text"],
-                                          font=FONTS["body_bold"])
-        self.session_title_lbl.grid(row=0, column=0, padx=16, pady=12, sticky="w")
+        self.title_var = ctk.StringVar(value="Nuevo Chat")
+        ctk.CTkLabel(topbar, textvariable=self.title_var,
+                     text_color=C["text"], font=FONTS["title"],
+                     fg_color="transparent").grid(
+            row=0, column=0, padx=20, pady=14, sticky="w")
 
-        # Action buttons in topbar
-        actions = tk.Frame(self.topbar, bg=COLORS["bg"])
-        actions.grid(row=0, column=1, padx=10, sticky="e")
+        # Action buttons
+        actions = ctk.CTkFrame(topbar, fg_color="transparent")
+        actions.grid(row=0, column=1, padx=12, sticky="e")
 
-        IconButton(actions, "💾", self._export_chat, bg=COLORS["bg"]).pack(side="left")
-        IconButton(actions, "🗑", self._clear_chat, bg=COLORS["bg"]).pack(side="left", padx=(2, 0))
+        ctk.CTkButton(actions, text="💾  Exportar",
+                       fg_color="transparent",
+                       hover_color=C["border"],
+                       border_width=1, border_color=C["border"],
+                       text_color=C["text_dim"], font=FONTS["small"],
+                       corner_radius=8, height=30, width=100,
+                       command=self._export_chat).pack(side="left", padx=(0, 6))
+
+        ctk.CTkButton(actions, text="🗑  Borrar",
+                       fg_color="transparent",
+                       hover_color=C["btn_delete"],
+                       border_width=1, border_color=C["border"],
+                       text_color=C["text_dim"], font=FONTS["small"],
+                       corner_radius=8, height=30, width=90,
+                       command=self._clear_chat).pack(side="left")
 
         # Separator
-        tk.Frame(main_panel, bg=COLORS["border"], height=1).grid(row=0, column=0, sticky="sew")
+        ctk.CTkFrame(main, height=1, fg_color=C["border"],
+                     corner_radius=0).grid(row=0, column=0, sticky="sew")
 
         # Chat scroll area
-        self.chat_scroll = ScrollableFrame(main_panel, bg=COLORS["surface"])
+        self.chat_scroll = ctk.CTkScrollableFrame(
+            main, fg_color=C["surface"],
+            scrollbar_button_color=C["border"],
+            scrollbar_button_hover_color=C["purple"])
         self.chat_scroll.grid(row=1, column=0, sticky="nsew")
+        self.chat_scroll.grid_columnconfigure(0, weight=1)
 
-        # Input row
-        input_row = tk.Frame(main_panel, bg=COLORS["bg"], pady=10)
-        input_row.grid(row=2, column=0, sticky="ew", padx=16)
-        input_row.grid_columnconfigure(0, weight=1)
+        # ── Input area ────────────────────────────
+        input_panel = ctk.CTkFrame(main, fg_color=C["sidebar"],
+                                    corner_radius=0)
+        input_panel.grid(row=2, column=0, sticky="ew", padx=0, pady=0)
+        input_panel.grid_columnconfigure(0, weight=1)
 
-        input_wrap = tk.Frame(input_row, bg=COLORS["input_bg"],
-                              highlightthickness=1,
-                              highlightbackground=COLORS["border"])
-        input_wrap.grid(row=0, column=0, sticky="ew")
-        input_wrap.grid_columnconfigure(0, weight=1)
+        # Separator above input
+        ctk.CTkFrame(input_panel, height=1, fg_color=C["border"],
+                     corner_radius=0).grid(row=0, column=0, columnspan=2, sticky="ew")
 
-        self.prompt_entry = tk.Text(input_wrap, height=3, bg=COLORS["input_bg"],
-                                    fg=COLORS["text"], insertbackground=COLORS["accent"],
-                                    font=FONTS["body"], relief="flat",
-                                    highlightthickness=0, padx=12, pady=10,
-                                    wrap="word")
-        self.prompt_entry.grid(row=0, column=0, sticky="ew")
-        self.prompt_entry.bind("<Control-Return>", self._send)
-        self.prompt_entry.bind("<FocusIn>",
-                               lambda _: input_wrap.config(highlightbackground=COLORS["accent"]))
-        self.prompt_entry.bind("<FocusOut>",
-                               lambda _: input_wrap.config(highlightbackground=COLORS["border"]))
+        # Textbox
+        self.prompt_box = ctk.CTkTextbox(input_panel,
+                                          height=90,
+                                          fg_color=C["input_bg"],
+                                          text_color=C["text"],
+                                          font=FONTS["body"],
+                                          border_width=1,
+                                          border_color=C["border"],
+                                          corner_radius=12,
+                                          wrap="word",
+                                          scrollbar_button_color=C["border"])
+        self.prompt_box.grid(row=1, column=0, padx=(16, 8),
+                              pady=12, sticky="ew")
 
         # Placeholder
-        self._placeholder_active = True
-        ph_text = "Escribe tu mensaje...  (Ctrl+Enter para enviar)"
-        self.prompt_entry.insert("1.0", ph_text)
-        self.prompt_entry.config(fg=COLORS["text_dim"])
-        self.prompt_entry.bind("<FocusIn>", lambda e: (self._clear_placeholder(), input_wrap.config(highlightbackground=COLORS["accent"])))
-        self.prompt_entry.bind("<FocusOut>", lambda e: (self._restore_placeholder(), input_wrap.config(highlightbackground=COLORS["border"])))
+        self._ph_active = True
+        self._ph_text = "Escribe tu mensaje...  (Ctrl+Enter para enviar)"
+        self.prompt_box.insert("0.0", self._ph_text)
+        self.prompt_box.configure(text_color=C["text_dim"])
+        self.prompt_box.bind("<FocusIn>", self._clear_ph)
+        self.prompt_box.bind("<FocusOut>", self._restore_ph)
+        self.prompt_box.bind("<Control-Return>", self._send)
 
         # Send button
-        self.send_btn = tk.Button(input_row, text="Send  ➤",
-                                  command=self._send,
-                                  bg=COLORS["accent_glow"], fg=COLORS["text"],
-                                  font=FONTS["body_bold"],
-                                  relief="flat", cursor="hand2",
-                                  padx=16, pady=10, bd=0,
-                                  activebackground=COLORS["accent"],
-                                  activeforeground=COLORS["text"])
-        self.send_btn.grid(row=0, column=1, padx=(8, 0), sticky="s")
-        self.send_btn.bind("<Enter>", lambda _: self.send_btn.config(bg=COLORS["accent"]))
-        self.send_btn.bind("<Leave>", lambda _: self.send_btn.config(bg=COLORS["accent_glow"]))
+        self.send_btn = ctk.CTkButton(input_panel,
+                                       text="Enviar\n➤",
+                                       width=90, height=90,
+                                       fg_color=C["btn_primary"],
+                                       hover_color=C["btn_hover"],
+                                       text_color=C["text"],
+                                       font=FONTS["body_bold"],
+                                       corner_radius=12,
+                                       command=self._send)
+        self.send_btn.grid(row=1, column=1, padx=(0, 16), pady=12)
 
         # Status bar
-        self.status_var = tk.StringVar(value="")
-        tk.Label(input_row, textvariable=self.status_var, bg=COLORS["bg"],
-                 fg=COLORS["text_dim"], font=FONTS["small"]).grid(
-            row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.status_var = ctk.StringVar(value="")
+        self._status_lbl = ctk.CTkLabel(input_panel,
+                                         textvariable=self.status_var,
+                                         text_color=C["text_dim"],
+                                         font=FONTS["nano"],
+                                         fg_color="transparent")
+        self._status_lbl.grid(row=2, column=0, columnspan=2,
+                               sticky="w", padx=18, pady=(0, 8))
 
-    # ── Placeholder helpers ──────────────────────
-    def _clear_placeholder(self):
-        if self._placeholder_active:
-            self.prompt_entry.delete("1.0", "end")
-            self.prompt_entry.config(fg=COLORS["text"])
-            self._placeholder_active = False
+    # ── Placeholder ────────────────────────────────
+    def _clear_ph(self, _=None):
+        if self._ph_active:
+            self.prompt_box.delete("0.0", "end")
+            self.prompt_box.configure(text_color=C["text"],
+                                       border_color=C["purple"])
+            self._ph_active = False
 
-    def _restore_placeholder(self):
-        if not self.prompt_entry.get("1.0", "end").strip():
-            self.prompt_entry.insert("1.0", "Escribe tu mensaje...  (Ctrl+Enter para enviar)")
-            self.prompt_entry.config(fg=COLORS["text_dim"])
-            self._placeholder_active = True
+    def _restore_ph(self, _=None):
+        if not self.prompt_box.get("0.0", "end").strip():
+            self.prompt_box.insert("0.0", self._ph_text)
+            self.prompt_box.configure(text_color=C["text_dim"],
+                                       border_color=C["border"])
+            self._ph_active = True
 
-    # ── Sessions ────────────────────────────────
+    # ── Sessions ────────────────────────────────────
     def _new_session(self):
-        self._session_counter += 1
+        self._session_cnt += 1
         session = {
-            "id": self._session_counter,
-            "title": f"Chat {self._session_counter}",
-            "thread_id": f"thread_{time.time()}_{self._session_counter}",
-            "history": [],
+            "id":        self._session_cnt,
+            "title":     f"Chat {self._session_cnt}",
+            "thread_id": f"thread_{time.time()}_{self._session_cnt}",
+            "history":   [],
+            "_widget":   None,
         }
         self.sessions.append(session)
         idx = len(self.sessions) - 1
-        self._add_session_widget(len(self.sessions) - 1)
+        self._add_session_widget(idx)
         self._switch_session(idx)
 
     def _add_session_widget(self, idx):
         session = self.sessions[idx]
 
-        def on_click():
-            self._switch_session(idx)
-
-        def on_delete():
-            self._delete_session(idx)
-
-        item = SessionItem(self.session_list_frame,
-                           title=session["title"],
-                           on_click=on_click,
-                           on_delete=on_delete)
-        item.pack(fill="x", padx=4, pady=2)
+        item = SessionItem(
+            self.session_scroll,
+            title=session["title"],
+            on_click=lambda i=idx: self._switch_session(i),
+            on_delete=lambda i=idx: self._delete_session(i),
+        )
+        item.grid(row=idx, column=0, sticky="ew", pady=2)
         session["_widget"] = item
 
     def _switch_session(self, idx):
-        if self.active_session_idx is not None and self.active_session_idx < len(self.sessions):
-            self.sessions[self.active_session_idx]["_widget"].set_active(False)
+        if self.active_idx is not None and self.active_idx < len(self.sessions):
+            self.sessions[self.active_idx]["_widget"].set_active(False)
 
-        self.active_session_idx = idx
-        session = self.sessions[idx]
-        session["_widget"].set_active(True)
-        self.session_title_var.set(session["title"])
-
-        # Rebuild chat area
-        self._rebuild_chat(session)
+        self.active_idx = idx
+        s = self.sessions[idx]
+        s["_widget"].set_active(True)
+        self.title_var.set(s["title"])
+        self._rebuild_chat(s)
 
     def _delete_session(self, idx):
         if len(self.sessions) == 1:
             messagebox.showinfo("Info", "Debe haber al menos una sesión.")
             return
-        session = self.sessions[idx]
-        session["_widget"].destroy()
+        # Destroy widget
+        self.sessions[idx]["_widget"].destroy()
         self.sessions.pop(idx)
 
-        # Rebuild widgets (indices changed)
-        for w in self.session_list_frame.winfo_children():
+        # Rebuild all widgets with correct indices
+        for w in self.session_scroll.winfo_children():
             w.destroy()
         for i in range(len(self.sessions)):
             self._add_session_widget(i)
 
         new_idx = min(idx, len(self.sessions) - 1)
-        self.active_session_idx = None
+        self.active_idx = None
         self._switch_session(new_idx)
 
     def _rebuild_chat(self, session):
-        for w in self.chat_scroll.inner.winfo_children():
+        for w in self.chat_scroll.winfo_children():
             w.destroy()
-        if self.typing_indicator:
-            self.typing_indicator = None
+        self.typing_indicator = None
 
         if not session["history"]:
-            # Welcome message
-            welcome = tk.Frame(self.chat_scroll.inner, bg=COLORS["surface"])
-            welcome.pack(fill="x", expand=True, pady=60)
-            tk.Label(welcome, text="✦", bg=COLORS["surface"],
-                     fg=COLORS["accent"], font=("Segoe UI Emoji", 32)).pack()
-            tk.Label(welcome, text="¿En qué puedo ayudarte hoy?",
-                     bg=COLORS["surface"], fg=COLORS["text"],
-                     font=FONTS["title"]).pack(pady=(8, 0))
-            tk.Label(welcome, text=f"Modelo activo: {self.model_var.get()}",
-                     bg=COLORS["surface"], fg=COLORS["text_dim"],
-                     font=FONTS["small"]).pack(pady=(4, 0))
+            self._show_welcome()
         else:
             for role, text, ts in session["history"]:
-                ChatBubble(self.chat_scroll.inner, role, text, ts).pack(fill="x")
+                ChatBubble(self.chat_scroll, role, text, ts).pack(
+                    fill="x", pady=0)
+        self._scroll_bottom()
 
-        self.chat_scroll.scroll_bottom()
+    def _show_welcome(self):
+        frame = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
+        frame.pack(expand=True, pady=80)
 
-    # ── Send message ────────────────────────────
-    def _send(self, event=None):
-        if self._placeholder_active:
+        # Glowing icon
+        ctk.CTkLabel(frame, text="✦",
+                     text_color=C["purple"],
+                     font=("Segoe UI Emoji", 48),
+                     fg_color="transparent").pack()
+        ctk.CTkLabel(frame, text="¿En qué puedo ayudarte hoy?",
+                     text_color=C["text"],
+                     font=FONTS["title"],
+                     fg_color="transparent").pack(pady=(10, 4))
+        ctk.CTkLabel(frame, text=f"Modelo activo: {self.model_var.get()}",
+                     text_color=C["text_dim"],
+                     font=FONTS["small"],
+                     fg_color="transparent").pack()
+
+        # Quick tip chips
+        tips_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        tips_frame.pack(pady=(24, 0))
+        tips = ["💡  Haz una pregunta", "🐍  Escribe código Python",
+                "📖  Resume un texto", "🔍  Explica un concepto"]
+        for t in tips:
+            chip = ctk.CTkFrame(tips_frame, fg_color=C["card"],
+                                 corner_radius=20,
+                                 border_width=1, border_color=C["border"])
+            chip.pack(side="left", padx=6)
+            ctk.CTkLabel(chip, text=t, text_color=C["text_dim"],
+                          font=FONTS["small"],
+                          fg_color="transparent").pack(padx=14, pady=8)
+
+    # ── Send ─────────────────────────────────────────
+    def _send(self, _=None):
+        if self._ph_active:
             return
-        prompt = self.prompt_entry.get("1.0", "end").strip()
+        prompt = self.prompt_box.get("0.0", "end").strip()
         if not prompt:
             return
 
-        self.prompt_entry.delete("1.0", "end")
-        self._placeholder_active = False
+        self.prompt_box.delete("0.0", "end")
+        self._ph_active = False
 
-        session = self.sessions[self.active_session_idx]
+        session = self.sessions[self.active_idx]
         ts = time.strftime("%H:%M")
 
-        # Update title from first message
+        # Auto-title
         if not session["history"]:
-            title = prompt[:30] + ("…" if len(prompt) > 30 else "")
+            title = prompt[:28] + ("…" if len(prompt) > 28 else "")
             session["title"] = title
-            session["_widget"].lbl.config(text=title)
-            self.session_title_var.set(title)
+            session["_widget"].lbl.configure(text=title)
+            self.title_var.set(title)
 
-        # Add user bubble
+        # User bubble
         session["history"].append(("user", prompt, ts))
-        # Remove welcome screen if present
-        for w in self.chat_scroll.inner.winfo_children():
+        for w in self.chat_scroll.winfo_children():
             w.destroy()
         for role, text, t in session["history"]:
-            ChatBubble(self.chat_scroll.inner, role, text, t).pack(fill="x")
+            ChatBubble(self.chat_scroll, role, text, t).pack(fill="x")
 
         # Typing indicator
-        self.typing_indicator = TypingIndicator(self.chat_scroll.inner,
-                                                bd=0, padx=14, pady=10)
-        self.typing_indicator.pack(anchor="w", padx=14, pady=6)
+        self.typing_indicator = TypingIndicator(self.chat_scroll)
+        self.typing_indicator.pack(anchor="w", padx=14, pady=8)
         self.typing_indicator.start()
-        self.chat_scroll.scroll_bottom()
+        self._scroll_bottom()
 
-        # Disable input
-        self.send_btn.config(state="disabled")
-        self.prompt_entry.config(state="disabled")
-        self.status_var.set("Generando respuesta…")
+        # Lock input
+        self.send_btn.configure(state="disabled",
+                                 fg_color=C["border"],
+                                 text_color=C["text_dim"])
+        self.prompt_box.configure(state="disabled")
+        self.status_var.set("⏳  Generando respuesta…")
 
-        selected_model = self.model_var.get()
-        self.llm = OllamaLLM(model=selected_model)
-
+        self.llm = OllamaLLM(model=self.model_var.get())
         threading.Thread(target=self._generate,
                          args=(prompt, session["thread_id"]),
                          daemon=True).start()
@@ -669,12 +665,10 @@ class OllamaInterface:
     def _generate(self, prompt, thread_id):
         try:
             config = {"configurable": {"thread_id": thread_id}}
-            initial_message = HumanMessage(content=prompt)
+            msg = HumanMessage(content=prompt)
             response_text = ""
             for event in self.conversation_graph.stream(
-                {"messages": [initial_message]},
-                config=config,
-                stream_mode="values"
+                {"messages": [msg]}, config=config, stream_mode="values"
             ):
                 if "messages" in event:
                     response_text = event["messages"][-1].content
@@ -686,29 +680,30 @@ class OllamaInterface:
         if not self.window_open:
             return
         try:
-            result_type, content = self.response_queue.get_nowait()
+            kind, content = self.response_queue.get_nowait()
 
-            # Remove typing indicator
             if self.typing_indicator:
                 self.typing_indicator.stop()
                 self.typing_indicator.destroy()
                 self.typing_indicator = None
 
-            session = self.sessions[self.active_session_idx]
+            session = self.sessions[self.active_idx]
             ts = time.strftime("%H:%M")
 
-            if result_type == "error":
-                content = f"⚠️  **Error:** {content}"
+            if kind == "error":
+                content = f"⚠️  **Error:**\n{content}"
 
             session["history"].append(("ai", content, ts))
-            ChatBubble(self.chat_scroll.inner, "ai", content, ts).pack(fill="x")
-            self.chat_scroll.scroll_bottom()
+            ChatBubble(self.chat_scroll, "ai", content, ts).pack(fill="x")
+            self._scroll_bottom()
 
-            # Re-enable input
-            self.send_btn.config(state="normal")
-            self.prompt_entry.config(state="normal")
+            # Unlock input
+            self.send_btn.configure(state="normal",
+                                     fg_color=C["btn_primary"],
+                                     text_color=C["text"])
+            self.prompt_box.configure(state="normal")
             self.status_var.set("")
-            self.prompt_entry.focus_set()
+            self.prompt_box.focus_set()
 
         except queue.Empty:
             pass
@@ -716,38 +711,42 @@ class OllamaInterface:
             if self.window_open:
                 self.root.after(100, self._poll_queue)
 
-    # ── Actions ─────────────────────────────────
+    def _scroll_bottom(self):
+        self.chat_scroll.update_idletasks()
+        self.chat_scroll._parent_canvas.yview_moveto(1.0)
+
+    # ── Actions ──────────────────────────────────────
     def _export_chat(self):
-        session = self.sessions[self.active_session_idx]
+        session = self.sessions[self.active_idx]
         if not session["history"]:
             messagebox.showinfo("Info", "No hay mensajes para exportar.")
             return
         path = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            filetypes=[("Text Files", "*.txt"), ("Markdown", "*.md")],
-            initialfile=f"{session['title']}.txt"
+            defaultextension=".md",
+            filetypes=[("Markdown", "*.md"), ("Text", "*.txt")],
+            initialfile=f"{session['title']}.md"
         )
         if path:
             try:
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(f"# {session['title']}\n\n")
                     for role, text, ts in session["history"]:
-                        label = "You" if role == "user" else "Ollama"
-                        f.write(f"**[{ts}] {label}:**\n{text}\n\n")
-                messagebox.showinfo("✅ Éxito", "Chat exportado correctamente.")
+                        label = "**Tú**" if role == "user" else "**Ollama**"
+                        f.write(f"### {label} · {ts}\n{text}\n\n---\n\n")
+                messagebox.showinfo("✅  Exportado", f"Guardado en:\n{path}")
             except Exception as e:
                 messagebox.showerror("Error", str(e))
 
     def _clear_chat(self):
-        session = self.sessions[self.active_session_idx]
+        session = self.sessions[self.active_idx]
         if not session["history"]:
             return
-        if messagebox.askyesno("Confirmar", "¿Borrar el historial de esta sesión?"):
+        if messagebox.askyesno("Confirmar", "¿Borrar el historial de este chat?"):
             session["history"].clear()
             session["title"] = f"Chat {session['id']}"
             session["thread_id"] = f"thread_{time.time()}_{session['id']}"
-            session["_widget"].lbl.config(text=session["title"])
-            self.session_title_var.set(session["title"])
+            session["_widget"].lbl.configure(text=session["title"])
+            self.title_var.set(session["title"])
             self._rebuild_chat(session)
 
     def on_close(self):
@@ -755,16 +754,10 @@ class OllamaInterface:
         self.root.destroy()
 
 
-# ──────────────────────────────────────────────
-#  Entry point
-# ──────────────────────────────────────────────
+# ── Entry point ──────────────────────────────────────
 if __name__ == "__main__":
-    root = tk.Tk()
-    try:
-        root.iconbitmap(default="")
-    except Exception:
-        pass
+    root = ctk.CTk()
     app = OllamaInterface(root)
     if getattr(app, "_initialized", False):
         root.protocol("WM_DELETE_WINDOW", app.on_close)
-    root.mainloop()
+        root.mainloop()

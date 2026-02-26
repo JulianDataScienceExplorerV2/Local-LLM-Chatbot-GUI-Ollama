@@ -3,7 +3,7 @@ langchain-ollama==0.2.3
 langchain-core==0.3.39
 langgraph==0.2.74
 langgraph-checkpoint==2.0.16
-Pygments==2.19.1
+customtkinter==5.2.2
 typing-extensions==4.12.2
 
 # tkinter es necesario para la interfaz gráfica, pero generalmente viene con Python.
