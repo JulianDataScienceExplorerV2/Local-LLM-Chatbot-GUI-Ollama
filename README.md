@@ -19,7 +19,8 @@
 
 > Chat view with multi-session sidebar / Vista de chat con sidebar de sesiones múltiples
 
-![Ollama Chat - Main Interface](https://github.com/user-attachments/assets/e17dd7cf-783d-43e9-9f4a-da9adc3ecf8e)
+<img width="1252" height="815" alt="image" src="https://github.com/user-attachments/assets/2876f7b3-4ad3-4321-a84b-cc053724bfda" />
+
 
 ---
 
