@@ -7,7 +7,8 @@ Una hermosa interfaz gráfica local (GUI) escrita en Python para chatear con LLM
 ---
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JulianDataScienceExplorerV2/Local-LLM-Chatbot-GUI-Ollama/main/assets/llm_chat_gui.png" alt="Local LLM Chatbot GUI" width="800"/>
+  <img width="1252" height="815" alt="Captura de pantalla 2026-02-25 224441" src="https://github.com/user-attachments/assets/19973d49-bce3-4032-8943-fe9bf2c8c39b" />
+
 </p>
 
 ## Features / Caracteristicas
@@ -46,3 +47,4 @@ python app.py
 <b>Julian David Urrego Lancheros</b> <br>
 <i>Generative AI & Python Developer</i>
 </div>
+
